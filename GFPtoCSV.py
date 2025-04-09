@@ -1,94 +1,81 @@
+import xml.etree.ElementTree as ET
 import csv
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, simpledialog, messagebox
 
-def convert_gfp_to_csv(gfp_file, csv_file, delimiter):
-    """Convert GFP file to CSV."""
-    try:
-        with open(gfp_file, "r") as gfp:
-            lines = gfp.readlines()
+def extract_line_data_with_positions(line_element):
+    result = {}
+    # Get 'name' attribute from <Line>
+    result['name'] = line_element.attrib.get('name', '')
 
-        if not lines:
-            messagebox.showwarning("Warning", "The .gfp file is empty.")
-            return
+    # Find the DataFile element
+    data_file = line_element.find('DataFile')
+    if data_file is not None:
+        positions = data_file.findall('Position')
+        # Get first and second Position elements, if available
+        if len(positions) > 0:
+            for key, val in positions[0].attrib.items():
+                if key not in ['normalized_file_pos', 'units', 'Z']:
+                    result[f'Position1_{key}'] = val
+        if len(positions) > 1:
+            for key, val in positions[1].attrib.items():
+                if key not in ['normalized_file_pos', 'units', 'Z']:
+                    result[f'Position2_{key}'] = val
 
-        # Extract headers using the specified delimiter
-        headers = lines[0].strip().split(delimiter)
+    return result
 
-        # Write to CSV
-        with open(csv_file, "w", newline="") as csv_out:
-            writer = csv.writer(csv_out)
-            writer.writerow(headers)  # Write headers
+def convert_gfp_to_csv(input_path, output_path):
+    tree = ET.parse(input_path)
+    root = tree.getroot()
 
-            # Write data rows
-            for line in lines[1:]:
-                row = line.strip().split(delimiter)
-                writer.writerow(row)
+    # Find the <LineSet> element and extract data from its <Line> children
+    line_set = root.find('.//LineSet')
+    if line_set is None:
+        raise ValueError("No <LineSet> element found in the file.")
 
-        messagebox.showinfo("Success", f"Conversion complete: {csv_file}")
+    data = []
+    all_fieldnames = set()
+    for line in line_set.findall('Line'):
+        line_data = extract_line_data_with_positions(line)
+        data.append(line_data)
+        all_fieldnames.update(line_data.keys())
 
-    except FileNotFoundError:
-        messagebox.showerror("Error", f"The file '{gfp_file}' was not found.")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {e}")
+    # Ensure 'name' is the first column
+    all_fieldnames.discard('name')
+    fieldnames = ['name'] + sorted(all_fieldnames)
 
-def select_gfp_file():
-    """Open file dialog to select the .gfp file starting in the script's directory."""
-    initial_dir = os.path.dirname(os.path.abspath(__file__))
-    gfp_path = filedialog.askopenfilename(initialdir=initial_dir, filetypes=[("GFP files", "*.gfp")])
-    
-    if gfp_path:
-        gfp_entry.delete(0, tk.END)
-        gfp_entry.insert(0, gfp_path)
+    with open(output_path, mode='w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in data:
+            writer.writerow({key: row.get(key, '') for key in fieldnames})
 
-def select_csv_file():
-    """Open file dialog to select the output .csv file starting in the script's directory."""
-    initial_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = filedialog.asksaveasfilename(initialdir=initial_dir, defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
-    
-    if csv_path:
-        csv_entry.delete(0, tk.END)
-        csv_entry.insert(0, csv_path)
+    messagebox.showinfo("Success", f"CSV file successfully created at: {output_path}")
 
-def start_conversion():
-    """Start the conversion process."""
-    gfp_file = gfp_entry.get().strip()
-    csv_file = csv_entry.get().strip()
-    delimiter = delimiter_entry.get().strip()
+def main():
+    root = tk.Tk()
+    root.withdraw()
 
-    if not gfp_file or not csv_file:
-        messagebox.showwarning("Warning", "Please select both GFP and CSV files.")
+    input_path = filedialog.askopenfilename(
+        title="Select GFP file",
+        filetypes=[("GFP files", "*.gfp")]
+    )
+    if not input_path:
+        messagebox.showerror("Error", "No input file selected.")
         return
 
-    # Handle special characters like tab
-    if delimiter.lower() == "\\t":
-        delimiter = "\t"
+    output_name = simpledialog.askstring("Output CSV", "Enter output CSV file name (without extension):")
+    if not output_name:
+        messagebox.showerror("Error", "No output file name provided.")
+        return
 
-    convert_gfp_to_csv(gfp_file, csv_file, delimiter)
+    output_path = os.path.join(os.path.dirname(input_path), output_name + '.csv')
 
-# GUI
-root = tk.Tk()
-root.title("GFP to CSV Converter")
-root.geometry("500x300")
-root.resizable(False, False)
+    try:
+        convert_gfp_to_csv(input_path, output_path)
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred:\n{e}")
 
-# Labels, entries, convert button
-tk.Label(root, text="Select .gfp file:").pack(pady=(10, 0))
-gfp_entry = tk.Entry(root, width=50)
-gfp_entry.pack(pady=5)
-tk.Button(root, text="Browse", command=select_gfp_file).pack()
-
-tk.Label(root, text="Select output .csv file:").pack(pady=(10, 0))
-csv_entry = tk.Entry(root, width=50)
-csv_entry.pack(pady=5)
-tk.Button(root, text="Browse", command=select_csv_file).pack()
-
-tk.Label(root, text="Enter delimiter (optional):").pack(pady=(10, 0))
-delimiter_entry = tk.Entry(root, width=10)
-delimiter_entry.pack(pady=5)
-delimiter_entry.insert(0, "|")  # Default delimiter
-
-tk.Button(root, text="Convert", command=start_conversion, bg="green", fg="white").pack(pady=20)
-
-root.mainloop()
+if __name__ == "__main__":
+    main()
