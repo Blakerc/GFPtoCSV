@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 import csv
 import os
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import filedialog, messagebox
 
 def extract_line_data_with_positions(line_element):
     result = {}
@@ -53,29 +53,60 @@ def convert_gfp_to_csv(input_path, output_path):
 
     messagebox.showinfo("Success", f"CSV file successfully created at: {output_path}")
 
+
+def browse_file(entry):
+    path = filedialog.askopenfilename(filetypes=[("GFP files", "*.gfp")])
+    if path:
+        entry.delete(0, tk.END)
+        entry.insert(0, path)
+
+
 def main():
     root = tk.Tk()
-    root.withdraw()
+    root.title("GFP to CSV Converter")
+    
+    root.update_idletasks()
+    width = root.winfo_width()
+    height = root.winfo_height()
+    x = (root.winfo_screenwidth() // 2) - (width)
+    y = (root.winfo_screenheight() // 2) - (height)
+    root.geometry(f'+{x}+{y}')
 
-    input_path = filedialog.askopenfilename(
-        title="Select GFP file",
-        filetypes=[("GFP files", "*.gfp")]
-    )
-    if not input_path:
-        messagebox.showerror("Error", "No input file selected.")
-        return
+    tk.Label(root, text="GFP File:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+    entry_path = tk.Entry(root, width=50)
+    entry_path.grid(row=0, column=1, padx=5, pady=5)
+    tk.Button(root, text="Browse", command=lambda: browse_file(entry_path)).grid(row=0, column=2, padx=5, pady=5)
 
-    output_name = simpledialog.askstring("Output CSV", "Enter output CSV file name (without extension):")
-    if not output_name:
-        messagebox.showerror("Error", "No output file name provided.")
-        return
+    tk.Label(root, text="Output CSV:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+    entry_name = tk.Entry(root, width=50)
+    entry_name.grid(row=1, column=1, padx=5, pady=5)
 
-    output_path = os.path.join(os.path.dirname(input_path), output_name + '.csv')
+    def on_submit():
+        input_path = entry_path.get().strip()
+        output_name = entry_name.get().strip()
 
-    try:
-        convert_gfp_to_csv(input_path, output_path)
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred:\n{e}")
+        if not input_path or not os.path.isfile(input_path):
+            messagebox.showerror("Error", "Please provide a valid GFP file path.")
+            return
+        if not output_name:
+            messagebox.showerror("Error", "Please enter a name for the output CSV file.")
+            return
+
+        output_path = os.path.join(os.path.dirname(input_path), output_name + '.csv')
+        
+        if os.path.exists(output_path):
+            messagebox.showerror("Error", f"A file named '{output_name}.csv' already exists in this directory.")
+            return
+
+        try:
+            convert_gfp_to_csv(input_path, output_path)
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred:\n{e}")
+
+    convert_button = tk.Button(root, text="Convert", command=on_submit)
+    convert_button.grid(row=2, column=0, columnspan=3, pady=10)
+
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
